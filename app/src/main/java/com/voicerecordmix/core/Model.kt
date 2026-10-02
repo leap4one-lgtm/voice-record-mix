@@ -12,6 +12,8 @@ enum class SongKind { IMPORTED, GENERATED }
 enum class Rhythm(val label: String, val matras: Int, val beatsPerBar: Int) {
     KEHERWA("Keherwa (8)", 8, 4),
     DADRA("Dadra (6)", 6, 3),
+    BHAJAN("Bhajan 6/8", 6, 3),
+    SLOW("Slow worship 4/4", 8, 4),
     POP("Pop 4/4", 8, 4),
 }
 
@@ -44,6 +46,8 @@ data class GenSettings(
     val padVol: Float = 0.5f,
     val bassVol: Float = 0.6f,
     val tanpuraVol: Float = 0.35f,
+    /** Use the loaded tabla/dholak sample pack when available (else synthesized drums). */
+    val useSamples: Boolean = true,
 )
 
 @Serializable
@@ -80,6 +84,15 @@ data class Take(
     val autoLeadFrames: Int,
     val autoSyncMeasured: Boolean,
     val mix: MixSettings = MixSettings(),
+)
+
+@Serializable
+data class AppSettings(
+    /** Measured extra voice delay per output route ("wired", "bluetooth", "speaker"), in ms. */
+    val calibrationMs: Map<String, Float> = emptyMap(),
+    /** Hear your own voice in the headphones while recording. */
+    val monitor: Boolean = false,
+    val monitorVol: Float = 0.8f,
 )
 
 /** Common section names offered as one-tap choices. */

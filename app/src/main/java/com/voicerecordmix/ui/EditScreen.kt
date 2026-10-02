@@ -1,5 +1,7 @@
 package com.voicerecordmix.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -71,6 +73,7 @@ import com.voicerecordmix.core.Markers
 import com.voicerecordmix.core.QUICK_SECTION_NAMES
 import com.voicerecordmix.core.Rhythm
 import com.voicerecordmix.core.SAMPLE_RATE
+import com.voicerecordmix.core.SamplePack
 import com.voicerecordmix.core.Section
 import com.voicerecordmix.core.Song
 import com.voicerecordmix.core.SongKind
@@ -336,6 +339,8 @@ private fun GeneratedEditor(vm: AppViewModel, song: Song) {
         }
     }
 
+    DrumSoundCard(vm, song)
+
     Text("Sections", style = MaterialTheme.typography.titleMedium, color = Gold)
     Text(
         "Type one chord per bar, e.g. \"C C F G\". Split a bar with a comma: \"F,G\". " +
@@ -373,6 +378,36 @@ private fun GeneratedEditor(vm: AppViewModel, song: Song) {
     }, Modifier.fillMaxWidth()) {
         Icon(Icons.Default.Add, null)
         Text("  Add section")
+    }
+}
+
+@Composable
+private fun DrumSoundCard(vm: AppViewModel, song: Song) {
+    val g = song.gen
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) vm.importSamples(uris)
+    }
+    val hits = vm.samplePack.hits.keys.map { it.name.lowercase() }.sorted()
+    Card {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Tabla / dholak sound", style = MaterialTheme.typography.titleSmall)
+            Text(
+                if (hits.isEmpty()) "Using the built-in synthesized beat. For a real tabla or dholak, load a " +
+                    "sample pack: short .wav hits named ${SamplePack.EXPECTED}."
+                else "Sample pack: ${hits.joinToString(", ")}. Missing sounds use the built-in beat.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (hits.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(g.useSamples, { vm.updateSong(song.copy(gen = g.copy(useSamples = it))) })
+                Text("  Use samples for this song", style = MaterialTheme.typography.bodyMedium)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton({ picker.launch(arrayOf("audio/*")) }) {
+                    Text(if (hits.isEmpty()) "Load sample pack" else "Add / replace sounds")
+                }
+                if (hits.isNotEmpty()) TextButton({ vm.clearSamples() }) { Text("Remove pack") }
+            }
+        }
     }
 }
 

@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VolumeDown
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -48,7 +49,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -151,6 +154,7 @@ private fun StartPanel(
             }
         }
         LabeledSlider("Music in ears", vm.musicVolume, 0f..1f, "${(vm.musicVolume * 100).roundToInt()}%", vm::changeMusicVolume)
+        MonitorAndSyncCard(vm, headphones)
         Button(
             onRecord, Modifier.fillMaxWidth().height(68.dp),
             colors = ButtonDefaults.buttonColors(containerColor = RecordRed, contentColor = Color.White),
@@ -172,6 +176,72 @@ private fun StartPanel(
                 Text("• Fade out: end the music gently. Then tap Stop to save.", style = MaterialTheme.typography.bodySmall)
             }
         }
+    }
+}
+
+@Composable
+private fun MonitorAndSyncCard(vm: AppViewModel, headphones: Boolean) {
+    val s = vm.settings
+    val ctx = LocalContext.current
+    var showCalib by remember { mutableStateOf(false) }
+    val route = remember(headphones) { vm.currentRoute() }
+    val calibrated = s.calibrationMs[route]
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) vm.calibrate() else vm.message = "Microphone permission is needed to calibrate."
+    }
+    Card {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Hear my voice", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Your voice in the headphones while recording. There is a small delay; " +
+                            "if it distracts you, turn it off or wear only one earbud.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(s.monitor, { vm.updateSettings(s.copy(monitor = it)) }, enabled = headphones || s.monitor)
+            }
+            if (s.monitor) LabeledSlider("Voice level", s.monitorVol, 0f..1.5f, "${(s.monitorVol * 100).roundToInt()}%",
+                { vm.updateSettings(s.copy(monitorVol = it)) })
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("Sync calibration", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        Route.label(route) + ": " +
+                            (calibrated?.let { "%+d ms".format(it.roundToInt()) } ?: "not calibrated (automatic sync only)"),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                OutlinedButton({ showCalib = true }, enabled = vm.playMode == PlayMode.NONE) {
+                    Text(if (vm.playMode == PlayMode.CALIBRATE) "Listening…" else "Calibrate")
+                }
+            }
+        }
+    }
+    if (showCalib) {
+        AlertDialog(
+            onDismissRequest = { showCalib = false },
+            title = { Text("Calibrate sync") },
+            text = {
+                Text(
+                    "Once per headphones, so your voice lines up perfectly with the music.\n\n" +
+                        "1. Go somewhere quiet.\n" +
+                        "2. Hold one earbud right against the phone's microphone (usually the bottom edge). " +
+                        "Without headphones, just keep the phone on a table.\n" +
+                        "3. Tap Start and stay silent for 5 seconds while it clicks."
+                )
+            },
+            confirmButton = {
+                TextButton({
+                    showCalib = false
+                    if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                        vm.calibrate()
+                    } else permission.launch(Manifest.permission.RECORD_AUDIO)
+                }) { Text("Start") }
+            },
+            dismissButton = { TextButton({ showCalib = false }) { Text("Cancel") } },
+        )
     }
 }
 

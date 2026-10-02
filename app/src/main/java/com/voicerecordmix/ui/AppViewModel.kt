@@ -2,6 +2,8 @@ package com.voicerecordmix.ui
 
 import android.app.Application
 import android.content.Intent
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.compose.runtime.getValue
@@ -16,12 +18,15 @@ import com.voicerecordmix.audio.Exporter
 import com.voicerecordmix.audio.FilePcm
 import com.voicerecordmix.audio.MixPlayer
 import com.voicerecordmix.audio.RecordingService
+import com.voicerecordmix.core.AppSettings
+import com.voicerecordmix.core.Calibration
 import com.voicerecordmix.core.EngineState
 import com.voicerecordmix.core.LoopEngine
 import com.voicerecordmix.core.MixSettings
 import com.voicerecordmix.core.Mixer
 import com.voicerecordmix.core.MusicSource
 import com.voicerecordmix.core.SAMPLE_RATE
+import com.voicerecordmix.core.SamplePack
 import com.voicerecordmix.core.Section
 import com.voicerecordmix.core.Song
 import com.voicerecordmix.core.SongKind
@@ -49,7 +54,20 @@ sealed interface Screen {
 }
 
 /** What is currently making sound through an [AudioRunner]. */
-enum class PlayMode { NONE, PREVIEW, PRACTICE, RECORD }
+enum class PlayMode { NONE, PREVIEW, PRACTICE, RECORD, CALIBRATE }
+
+/** Output route names used for per-route sync calibration. */
+object Route {
+    const val WIRED = "wired"
+    const val BLUETOOTH = "bluetooth"
+    const val SPEAKER = "speaker"
+
+    fun label(r: String) = when (r) {
+        WIRED -> "Wired headphones"
+        BLUETOOTH -> "Bluetooth headphones"
+        else -> "Phone speaker"
+    }
+}
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     val repo = Repo(app)
@@ -65,6 +83,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var progress by mutableStateOf(0f)
         private set
     var message by mutableStateOf<String?>(null)
+    var settings by mutableStateOf(repo.settings())
+        private set
+    var samplePack by mutableStateOf(repo.loadSamplePack())
+        private set
 
     // ---- Live playback ----
     var playMode by mutableStateOf(PlayMode.NONE)
@@ -89,6 +111,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var pcmSongId: String? = null
     /** Section starts used to turn engine positions into track positions for the waveform. */
     private var currentStarts: List<Long> = listOf(0L)
+    private var recordingRoute = Route.SPEAKER
 
     fun song(id: String) = songs.firstOrNull { it.id == id }
     fun take(id: String) = takes.firstOrNull { it.id == id }
@@ -177,7 +200,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // ---- Playback ----
 
     private fun sourceFor(song: Song, wholeTrack: Boolean): MusicSource = when (song.kind) {
-        SongKind.GENERATED -> SynthSource(song)
+        SongKind.GENERATED -> SynthSource(song, samplePack)
         SongKind.IMPORTED -> {
             if (pcmSongId != song.id) {
                 pcm?.close()
@@ -222,12 +245,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             recordingTake = take
             dir = repo.takeDir(take.id)
         }
+        recordingRoute = currentRoute()
         return startRunner(e, dir, if (record) PlayMode.RECORD else PlayMode.PRACTICE)
     }
 
     private fun startRunner(e: LoopEngine, dir: File?, mode: PlayMode): String? {
-        val r = AudioRunner(e, dir)
+        val r = AudioRunner(e, dir, monitor = mode == PlayMode.RECORD && settings.monitor)
         r.musicGain = musicVolume
+        r.monitorGain = settings.monitorVol
         r.onEnded = { viewModelScope.launch { if (runner === r) stopAudio() } }
         if (mode == PlayMode.RECORD) RecordingService.start(getApplication())
         val err = r.start()
@@ -258,6 +283,119 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         runner?.musicGain = v
     }
 
+    fun updateSettings(s: AppSettings) {
+        settings = s
+        repo.saveSettings(s)
+        runner?.monitorGain = s.monitorVol
+    }
+
+    /** Where audio is going right now: Bluetooth beats wired beats the speaker. */
+    fun currentRoute(): String {
+        val am = getApplication<Application>().getSystemService(AudioManager::class.java)
+        val types = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).map { it.type }.toSet()
+        val bt = setOf(AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, 26 /* TYPE_BLE_HEADSET */, 27 /* TYPE_BLE_SPEAKER */)
+        val wired = setOf(AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_USB_HEADSET)
+        return when {
+            types.any { it in bt } -> Route.BLUETOOTH
+            types.any { it in wired } -> Route.WIRED
+            else -> Route.SPEAKER
+        }
+    }
+
+    /**
+     * Plays clicks while the user holds an earbud (or the phone speaker) at the microphone,
+     * then stores the measured remaining delay for the current output route.
+     */
+    fun calibrate() {
+        if (playMode != PlayMode.NONE) return
+        val route = currentRoute()
+        val dir = repo.calibrationDir.apply { deleteRecursively(); mkdirs() }
+        val e = LoopEngine(Calibration.ClickSource(), booleanArrayOf(false))
+        val r = AudioRunner(e, dir)
+        r.musicGain = 1f
+        r.start()?.let { message = it; return }
+        playMode = PlayMode.CALIBRATE
+        viewModelScope.launch {
+            delay(Calibration.totalFrames * 1000 / SAMPLE_RATE + 300)
+            val result = withContext(Dispatchers.IO) { r.stop() }
+            val ms = withContext(Dispatchers.IO) {
+                FilePcm(File(dir, "voice.pcm"), 1).use { Calibration.measure(it, result.leadFrames) }
+            }
+            playMode = PlayMode.NONE
+            if (ms == null) {
+                message = "Couldn't hear the clicks clearly. Try again in a quiet room, holding the " +
+                    "earbud right against the phone's microphone (usually at the bottom edge)."
+            } else {
+                updateSettings(settings.copy(calibrationMs = settings.calibrationMs + (route to ms)))
+                message = "${Route.label(route)}: voice sync set to %+d ms. New recordings use it automatically."
+                    .format(ms.toInt())
+            }
+        }
+    }
+
+    /**
+     * Loads drum hits from audio files. Each file name says which sound it is
+     * (e.g. "dha.wav", "Dholak Ge 2.wav", "kick.wav").
+     */
+    fun importSamples(uris: List<Uri>) {
+        val ctx = getApplication<Application>()
+        busy = "Loading sounds…"
+        progress = 0f
+        viewModelScope.launch {
+            val loaded = ArrayList<String>()
+            val skipped = ArrayList<String>()
+            withContext(Dispatchers.IO) {
+                uris.forEachIndexed { idx, uri ->
+                    val name = ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                        ?.use { if (it.moveToFirst()) it.getString(0) else null } ?: "?"
+                    val stroke = SamplePack.strokeForFileName(name)
+                    if (stroke == null) { skipped.add(name); return@forEachIndexed }
+                    val tmp = File(ctx.cacheDir, "sample.pcm")
+                    try {
+                        Decoder.decode(ctx, uri, tmp, minFrames = 100) {}
+                        repo.saveSample(stroke, prepareHit(tmp))
+                        loaded.add(stroke.name.lowercase())
+                    } catch (e: Exception) {
+                        skipped.add(name)
+                    } finally {
+                        tmp.delete()
+                    }
+                    progress = (idx + 1f) / uris.size
+                }
+            }
+            samplePack = repo.loadSamplePack()
+            busy = null
+            message = buildString {
+                append(if (loaded.isEmpty()) "No sounds loaded." else "Loaded: ${loaded.distinct().joinToString(", ")}.")
+                if (skipped.isNotEmpty()) {
+                    append("\n\nSkipped (name not recognised or unreadable): ${skipped.joinToString(", ")}.")
+                    append("\nName files like: ${SamplePack.EXPECTED}.")
+                }
+            }
+        }
+    }
+
+    /** Reads a decoded hit, trims leading silence, caps it at 3 s and normalises its peak. */
+    private fun prepareHit(file: File): FloatArray = FilePcm(file, 2).use { p ->
+        val frames = p.frames.toInt()
+        val raw = ShortArray(frames * 2)
+        p.read(0, raw, frames)
+        var peak = 1
+        for (x in raw) peak = maxOf(peak, kotlin.math.abs(x.toInt()))
+        val start = raw.indexOfFirst { kotlin.math.abs(it.toInt()) > peak / 20 }.coerceAtLeast(0) / 2
+        val len = minOf(frames - start, SAMPLE_RATE * 3)
+        val g = 0.9f / peak
+        FloatArray(len * 2) { i ->
+            val fade = if (i / 2 > len - 480) (len - i / 2) / 480f else 1f // 10 ms fade at the end
+            raw[start * 2 + i] * g * fade
+        }
+    }
+
+    fun clearSamples() {
+        repo.clearSamples()
+        samplePack = repo.loadSamplePack()
+    }
+
     fun next() = engine?.next()
     fun repeat(times: Int) = engine?.repeat(times)
     fun toggleHold() = engine?.toggleHold()
@@ -285,9 +423,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
             // Start with the voice at a healthy level: aim its loudest moment at about -3 dB.
             val voiceVol = if (result.voicePeak > 0.01f) (0.7f / result.voicePeak).coerceIn(0.5f, 4f) else 1f
+            val calibrated = settings.calibrationMs[recordingRoute]
             val saved = take.copy(
-                frames = result.frames, autoLeadFrames = result.leadFrames, autoSyncMeasured = result.measured,
-                mix = MixSettings(voiceVol = voiceVol),
+                frames = result.frames, autoLeadFrames = result.leadFrames,
+                autoSyncMeasured = result.measured || calibrated != null,
+                mix = MixSettings(voiceVol = voiceVol, syncMs = calibrated ?: 0f),
             )
             repo.saveTake(saved)
             takes = repo.takes()

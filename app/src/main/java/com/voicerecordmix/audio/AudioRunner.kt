@@ -19,8 +19,10 @@ import kotlin.math.roundToInt
 
 private const val BLOCK = 960 // 20 ms
 
-fun newMusicTrack(): AudioTrack {
+/** [lowLatency] asks for the fast output path with a small buffer (used for voice monitoring). */
+fun newMusicTrack(lowLatency: Boolean = false): AudioTrack {
     val minBuf = AudioTrack.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT)
+    val bytes = if (lowLatency) maxOf(minBuf, 480 * 4 * 3) else maxOf(minBuf * 2, BLOCK * 4 * 4)
     return AudioTrack.Builder()
         .setAudioAttributes(
             AudioAttributes.Builder()
@@ -35,8 +37,11 @@ fun newMusicTrack(): AudioTrack {
                 .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
                 .build()
         )
-        .setBufferSizeInBytes(maxOf(minBuf * 2, BLOCK * 4 * 4))
+        .setBufferSizeInBytes(bytes)
         .setTransferMode(AudioTrack.MODE_STREAM)
+        .setPerformanceMode(
+            if (lowLatency) AudioTrack.PERFORMANCE_MODE_LOW_LATENCY else AudioTrack.PERFORMANCE_MODE_NONE
+        )
         .build()
 }
 
@@ -45,10 +50,27 @@ fun newMusicTrack(): AudioTrack {
  * the same time. Both the music actually played and the voice are written as separate stems, so
  * the final mix can be rebalanced later.
  */
-class AudioRunner(private val engine: LoopEngine, private val takeDir: File?) {
+class AudioRunner(
+    private val engine: LoopEngine,
+    private val takeDir: File?,
+    /** Hear your own voice in the headphones (only while recording). */
+    private val monitor: Boolean = false,
+) {
     class Result(val frames: Long, val leadFrames: Int, val measured: Boolean, val voicePeak: Float)
 
     @Volatile var musicGain = 1f
+    @Volatile var monitorGain = 1f
+
+    // Mic -> headphones ring buffer (single producer: record thread, single consumer: play thread).
+    private val ring = ShortArray(SAMPLE_RATE / 2)
+    @Volatile private var ringWrite = 0L
+    private var ringRead = 0L
+    private val monitoring get() = monitor && takeDir != null
+    /** Frames per audio block: small when monitoring so the voice comes back quickly. */
+    private val block get() = if (monitoring) BLOCK / 4 else BLOCK
+    /** Approximate delay of the voice in the headphones, in ms (0 when not monitoring). */
+    @Volatile var monitorDelayMs = 0
+        private set
     /** Recent mic peak level, 0..1. */
     @Volatile var micLevel = 0f
         private set
@@ -110,25 +132,27 @@ class AudioRunner(private val engine: LoopEngine, private val takeDir: File?) {
 
     private fun playLoop(stemFile: File?) {
         Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
-        val track = newMusicTrack()
+        val track = newMusicTrack(lowLatency = monitoring)
         trackBufferFrames = track.bufferSizeInFrames
         val stem = stemFile?.let { PcmWriter(it) }
-        val f = FloatArray(BLOCK * 2)
-        val pcm = ShortArray(BLOCK * 2)
-        val stemPcm = ShortArray(BLOCK * 2)
+        val block = block
+        if (monitoring) monitorDelayMs = (trackBufferFrames + block * 3) * 1000 / SAMPLE_RATE
+        val f = FloatArray(block * 2)
+        val pcm = ShortArray(block * 2)
+        val stemPcm = ShortArray(block * 2)
         val ts = AudioTimestamp()
         try {
             track.play()
             while (running) {
-                engine.render(f, BLOCK)
+                engine.render(f, block)
+                for (k in 0 until block * 2) stemPcm[k] = toPcm16(f[k])
+                stem?.write(stemPcm, block * 2)
                 val g = musicGain
-                for (k in 0 until BLOCK * 2) {
-                    pcm[k] = toPcm16(f[k] * g)
-                    stemPcm[k] = toPcm16(f[k])
-                }
-                stem?.write(stemPcm, BLOCK * 2)
-                track.write(pcm, 0, BLOCK * 2)
-                musicFrames += BLOCK
+                for (k in 0 until block * 2) f[k] *= g
+                if (monitoring) mixMonitor(f, block)
+                for (k in 0 until block * 2) pcm[k] = toPcm16(f[k])
+                track.write(pcm, 0, block * 2)
+                musicFrames += block
                 if (musicTs == null && musicFrames > SAMPLE_RATE * 2 && track.getTimestamp(ts) && ts.framePosition > 0) {
                     musicTs = longArrayOf(ts.framePosition, ts.nanoTime)
                 }
@@ -141,6 +165,20 @@ class AudioRunner(private val engine: LoopEngine, private val takeDir: File?) {
             runCatching { track.stop() }
             track.release()
             stem?.close()
+        }
+    }
+
+    /** Adds the newest mic audio to the headphone output, skipping ahead if it falls behind. */
+    private fun mixMonitor(out: FloatArray, n: Int) {
+        val w = ringWrite
+        if (w - ringRead > n * 3) ringRead = w - n * 2 // keep the delay short
+        val g = monitorGain / 32768f
+        for (k in 0 until n) {
+            if (ringRead >= w) break
+            val v = ring[(ringRead % ring.size).toInt()] * g
+            out[k * 2] += v
+            out[k * 2 + 1] += v
+            ringRead++
         }
     }
 
@@ -173,16 +211,22 @@ class AudioRunner(private val engine: LoopEngine, private val takeDir: File?) {
             return
         }
         val writer = PcmWriter(file)
-        val buf = ShortArray(BLOCK)
+        val block = block
+        val buf = ShortArray(block)
         val ts = AudioTimestamp()
         var frames = 0L
         try {
             rec.startRecording()
             ready.countDown()
             while (running) {
-                val n = rec.read(buf, 0, BLOCK)
+                val n = rec.read(buf, 0, block)
                 if (n <= 0) continue
                 writer.write(buf, n)
+                if (monitoring) {
+                    var w = ringWrite
+                    for (k in 0 until n) { ring[(w % ring.size).toInt()] = buf[k]; w++ }
+                    ringWrite = w
+                }
                 frames += n
                 var peak = 0
                 for (k in 0 until n) peak = maxOf(peak, abs(buf[k].toInt()))

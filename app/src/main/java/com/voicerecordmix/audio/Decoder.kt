@@ -17,7 +17,7 @@ import kotlin.math.abs
 object Decoder {
     class Result(val frames: Long, val peaks: FloatArray)
 
-    fun decode(context: Context, uri: Uri, out: File, onProgress: (Float) -> Unit): Result {
+    fun decode(context: Context, uri: Uri, out: File, minFrames: Int = SAMPLE_RATE, onProgress: (Float) -> Unit): Result {
         val extractor = MediaExtractor()
         extractor.setDataSource(context, uri, null)
         val track = (0 until extractor.trackCount).firstOrNull {
@@ -122,7 +122,7 @@ object Decoder {
             extractor.release()
         }
         if (blockCount > 0) blockPeaks.add(blockMax)
-        if (frames < SAMPLE_RATE) error("The track is too short")
+        if (frames < minFrames) error("The audio is too short")
         return Result(frames, blockPeaks.toFloatArray())
     }
 }

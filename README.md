@@ -15,10 +15,16 @@ time of worship, and the music always stays in time.
    and tap **Mark section here** where each part begins (Intro, Pallavi, Interlude, Charanam 1, …,
    or a single line you like to repeat). Optional: tap the beat and **Snap markers** so every
    repeat starts exactly on the beat. Use the ⟳ button on a section to hear its loop seam.
-2. **Rhythm & pads**: the app makes the accompaniment itself: tabla/dholak (Keherwa or Dadra) or a
-   pop kit, keyboard pads, bass and tanpura, in any key and tempo. Type chords per section, one per
+2. **Rhythm & pads**: the app makes the accompaniment itself: tabla/dholak (Keherwa, Dadra,
+   Bhajan 6/8) or a kit (Slow worship 4/4, Pop 4/4), keyboard pads, bass and tanpura, in any key
+   and tempo. Type chords per section, one per
    bar: `C C F G`. Split a bar with a comma (`F,G`), `-` holds the last chord, `N` = drums only.
    **Transpose** moves everything to suit your voice.
+
+   **Real tabla/dholak sound:** tap *Load sample pack* and pick a few short `.wav` hits. The file
+   name says which sound it is: `dha`, `dhin`, `na`, `tin`, `ti`, `ge`, `ka` (also `kick`, `snare`,
+   `hat`/`shaker` for the kit rhythms), e.g. `Dholak_Ge-02.wav`. Any sound you don't provide uses
+   the built-in synthesized one, and Dha/Dhin are made from Ge + Na/Tin if only those are given.
 
 ## Singing
 
@@ -37,6 +43,11 @@ are shown large while you sing.
 
 Repeats always happen at a section boundary, with a 10 ms crossfade for imported tracks, so they
 never sound chopped.
+
+Before recording you can turn on **Hear my voice** (your voice in the headphones; there is a
+small delay, so it's optional) and run **Sync calibration** once per pair of headphones: hold an
+earbud against the phone's mic and the app measures the exact delay from a few clicks. Every new
+recording with those headphones then starts perfectly in sync.
 
 ## Mixing and sharing
 
@@ -67,6 +78,7 @@ Android 8.0 or newer.
   - `TrackSource`: imported track split at markers; `Resampler`; marker snapping
   - `Synth`: generated tabla/dholak, pads, bass and Karplus-Strong tanpura
   - `Mixer`: voice + music with sync offset, high-pass, Freeverb reverb, soft limiter
+  - `Calibration`: click track and loopback delay measurement
 - `audio/`: Android audio: `AudioRunner` (AudioTrack + AudioRecord, stems, sync measurement),
   `Decoder` (MediaCodec import), `Exporter` (M4A/WAV), `MixPlayer`, `RecordingService`
 - `ui/`: Jetpack Compose screens
@@ -77,3 +89,4 @@ Android 8.0 or newer.
 - Waveform zoom for very precise markers
 - More rhythms (Rupak, Teentaal, 6/8 waltz) and fills before section changes
 - Count-in click before recording
+- Zero-delay voice monitoring via native audio (Oboe/AAudio)

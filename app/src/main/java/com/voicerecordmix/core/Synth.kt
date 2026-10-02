@@ -118,6 +118,16 @@ private fun pattern(rhythm: Rhythm): List<Hit> = when (rhythm) {
         Hit(0, Stroke.DHA, 1f), Hit(2, Stroke.DHI, 0.8f), Hit(4, Stroke.NA, 0.75f), Hit(5, Stroke.GE, 0.4f),
         Hit(6, Stroke.DHA, 0.85f), Hit(8, Stroke.TI, 0.6f), Hit(10, Stroke.NA, 0.7f),
     )
+    // Dholak bhajan feel: Dha . Ge Na | Dhin . Ge Na Ka
+    Rhythm.BHAJAN -> listOf(
+        Hit(0, Stroke.DHA, 1f), Hit(3, Stroke.GE, 0.45f), Hit(4, Stroke.NA, 0.7f),
+        Hit(6, Stroke.DHI, 0.85f), Hit(8, Stroke.GE, 0.55f), Hit(10, Stroke.NA, 0.7f), Hit(11, Stroke.KA, 0.4f),
+    )
+    // Soft kick, rim on 3, quiet eighth-note hats.
+    Rhythm.SLOW -> buildList {
+        for (m in 0 until 8) add(Hit(m * 2, Stroke.HAT, if (m % 2 == 0) 0.25f else 0.15f))
+        add(Hit(0, Stroke.KICK, 0.9f)); add(Hit(10, Stroke.KICK, 0.5f)); add(Hit(8, Stroke.SNARE, 0.5f))
+    }
     Rhythm.POP -> buildList {
         for (m in 0 until 8) add(Hit(m * 2, Stroke.HAT, if (m % 2 == 0) 0.55f else 0.3f))
         add(Hit(0, Stroke.KICK, 1f)); add(Hit(8, Stroke.KICK, 0.9f)); add(Hit(10, Stroke.KICK, 0.6f))
@@ -129,7 +139,58 @@ private fun pattern(rhythm: Rhythm): List<Hit> = when (rhythm) {
 private fun bassHits(rhythm: Rhythm): IntArray = when (rhythm) {
     Rhythm.KEHERWA -> intArrayOf(0, 8, 14)
     Rhythm.DADRA -> intArrayOf(0, 6)
+    Rhythm.BHAJAN -> intArrayOf(0, 6)
+    Rhythm.SLOW -> intArrayOf(0, 8)
     Rhythm.POP -> intArrayOf(0, 6, 8)
+}
+
+/** Plays a recorded drum hit (stereo interleaved, 48 kHz). */
+private class SampleVoice(private val data: FloatArray, gain: Float, pan: Float) : Voice() {
+    private var pos = 0
+    private val gl = gain * (1 - pan)
+    private val gr = gain * (1 + pan)
+
+    override fun render(out: FloatArray, off: Int, n: Int): Boolean {
+        val frames = data.size / 2
+        val m = minOf(n, frames - pos)
+        for (k in 0 until m) {
+            out[(off + k) * 2] += data[(pos + k) * 2] * gl
+            out[(off + k) * 2 + 1] += data[(pos + k) * 2 + 1] * gr
+        }
+        pos += m
+        return pos < frames
+    }
+}
+
+/**
+ * Recorded tabla/dholak/kit hits, one per [Stroke]. Strokes without a sample fall back to
+ * the synthesized sound (Dha and Dhin are built from Ge + Na/Tin samples if those exist).
+ */
+class SamplePack(val hits: Map<Stroke, FloatArray>) {
+    companion object {
+        private val ALIASES = linkedMapOf(
+            Stroke.DHA to listOf("dha", "dhaa"),
+            Stroke.DHI to listOf("dhi", "dhin", "dhim"),
+            Stroke.TIN to listOf("tin", "tun", "thun", "tu"),
+            Stroke.TI to listOf("ti", "te", "tit", "tete", "re"),
+            Stroke.NA to listOf("na", "naa", "ta", "taa"),
+            Stroke.GE to listOf("ge", "ghe", "ga", "gha", "ghi", "bayan"),
+            Stroke.KA to listOf("ka", "ke", "kat", "ki", "kath"),
+            Stroke.KICK to listOf("kick", "bd", "kik", "bassdrum"),
+            Stroke.SNARE to listOf("snare", "sd", "rim", "clap"),
+            Stroke.HAT to listOf("hat", "hh", "hihat", "shaker", "chh"),
+        )
+
+        /** Which stroke a file name like "Dholak_Ge-02.wav" is for, or null. */
+        fun strokeForFileName(name: String): Stroke? {
+            val tokens = name.substringBeforeLast('.').lowercase().split(Regex("[^a-z]+")).filter { it.isNotEmpty() }
+            for (t in tokens) for ((stroke, names) in ALIASES) if (t in names) return stroke
+            return null
+        }
+
+        /** File names the pack understands, for help text. */
+        val EXPECTED = "dha, dhin, na, tin, ti, ge, ka (or kick, snare, hat)"
+    }
 }
 
 private class PadVoice(midi: Double, private val gain: Float) : Voice() {
@@ -239,7 +300,8 @@ private class Tanpura(sa: Double, private val gain: Float, private val noise: No
  * Generated accompaniment: tabla/dholak (or a pop kit), chord pads, bass and tanpura,
  * following each section's chord line. Section lengths are whole bars, so loops stay on beat.
  */
-class SynthSource(song: Song) : MusicSource {
+class SynthSource(song: Song, samples: SamplePack? = null) : MusicSource {
+    private val pack = samples?.takeIf { song.gen.useSamples && it.hits.isNotEmpty() }
     private val g = song.gen
     private val shift = g.transpose
     private val bars: List<List<Bar>> = song.sections.map { Chords.parseBars(it.chords) }
@@ -303,6 +365,20 @@ class SynthSource(song: Song) : MusicSource {
     private fun strokeVoices(s: Stroke, vel: Float) {
         val dg = 0.5f * g.drumsVol * vel
         if (dg <= 0f) return
+        pack?.let { p ->
+            val pan = if (s == Stroke.HAT) 0.2f else 0f
+            p.hits[s]?.let { voices.add(SampleVoice(it, dg * 1.3f, pan)); return }
+            // Compound bols from their halves when only those were provided.
+            val parts = when (s) {
+                Stroke.DHA -> listOf(Stroke.GE, Stroke.NA)
+                Stroke.DHI -> listOf(Stroke.GE, Stroke.TIN)
+                else -> emptyList()
+            }
+            if (parts.isNotEmpty() && parts.all { it in p.hits }) {
+                parts.forEach { strokeVoices(it, vel) }
+                return
+            }
+        }
         fun add(spec: StrokeSpec, f: Double, pan: Float) = voices.add(DrumVoice(spec, f, dg, pan, noise))
         when (s) {
             Stroke.DHA -> { add(GE, 98.0, 0f); add(NA, trebleHz, 0.15f) }
