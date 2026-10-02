@@ -98,4 +98,15 @@ class DemoRenderTest {
         writeWav("mixed.wav", mix, 2)
         assertTrue(mix.all { abs(it) <= 1f })
     }
+
+    @Test
+    fun rendersReadyMusicSamples() {
+        for (p in Preset.entries) {
+            val song = p.song(key = 2) // D
+            val engine = LoopEngine(SynthSource(song), song.sections.map { it.hold }.toBooleanArray())
+            engine.start(1)
+            val music = perform(engine, 14, mapOf(11 to { e -> e.finish() }))
+            writeWav("ready_${p.name.lowercase()}.wav", music, 2)
+        }
+    }
 }

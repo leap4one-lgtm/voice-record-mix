@@ -113,3 +113,27 @@ class CalibrationTest {
         assertNull(Calibration.measure(recording(lead = 0, extra = 0, gain = 0f), lead = 0))
     }
 }
+
+class PresetTest {
+    @Test
+    fun everyPresetPlaysInEveryKey() {
+        for (p in Preset.entries) for (key in listOf(0, 2, 7, 11)) for (changes in listOf(false, true)) {
+            val song = p.song(key, chordChanges = changes)
+            assertEquals(key, ((song.gen.key + song.gen.transpose) % 12 + 12) % 12)
+            val engine = LoopEngine(SynthSource(song), song.sections.map { it.hold }.toBooleanArray())
+            val buf = FloatArray(960 * 2)
+            var energy = 0.0
+            repeat(SAMPLE_RATE * 3 / 960) {
+                engine.render(buf, 960)
+                for (x in buf) { assertTrue(!x.isNaN() && abs(x) < 3f); energy += x * x }
+            }
+            assertTrue("$p silent", energy > 0.5)
+        }
+    }
+
+    @Test
+    fun droneUsesSaPaChord() {
+        val c = Chords.parse("C5")!!
+        assertTrue(c.intervals.contentEquals(intArrayOf(0, 7, 12)))
+    }
+}

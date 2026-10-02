@@ -93,6 +93,8 @@ data class AppSettings(
     /** Hear your own voice in the headphones while recording. */
     val monitor: Boolean = false,
     val monitorVol: Float = 0.8f,
+    /** Key last chosen for ready-made music (0 = C). */
+    val lastKey: Int = 1,
 )
 
 /** Common section names offered as one-tap choices. */

@@ -24,6 +24,7 @@ import com.voicerecordmix.ui.EditScreen
 import com.voicerecordmix.ui.HomeScreen
 import com.voicerecordmix.ui.MixScreen
 import com.voicerecordmix.ui.PerformScreen
+import com.voicerecordmix.ui.ReadyScreen
 import com.voicerecordmix.ui.Screen
 
 class MainActivity : ComponentActivity() {
@@ -38,6 +39,7 @@ class MainActivity : ComponentActivity() {
                     BackHandler(enabled = vm.screen != Screen.Home) { vm.back() }
                     when (val s = vm.screen) {
                         Screen.Home -> HomeScreen(vm)
+                        Screen.Ready -> ReadyScreen(vm)
                         is Screen.Edit -> EditScreen(vm, s.songId)
                         is Screen.Perform -> PerformScreen(vm, s.songId)
                         is Screen.Mix -> MixScreen(vm, s.takeId)

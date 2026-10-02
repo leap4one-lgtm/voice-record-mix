@@ -98,6 +98,7 @@ class ScreenshotTest {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     when (val s = vm.screen) {
                         Screen.Home -> HomeScreen(vm)
+                        Screen.Ready -> ReadyScreen(vm)
                         is Screen.Edit -> EditScreen(vm, s.songId)
                         is Screen.Perform -> PerformScreen(vm, s.songId)
                         is Screen.Mix -> MixScreen(vm, s.takeId)
@@ -108,6 +109,7 @@ class ScreenshotTest {
     }
 
     @Test fun home() { show(Screen.Home); shoot("1_home") }
+    @Test fun ready() { show(Screen.Ready); shoot("0_ready_music") }
     @Test fun editImported() { show(Screen.Edit(imported.id)); shoot("2_edit_track") }
     @Test fun editGenerated() { show(Screen.Edit(generated.id)); shoot("3_edit_rhythm") }
     @Test fun performStart() { show(Screen.Perform(imported.id)); shoot("4_sing_start") }

@@ -26,6 +26,8 @@ object Chords {
         "m" to intArrayOf(0, 3, 7),
         "7" to intArrayOf(0, 4, 7, 10),
         "6" to intArrayOf(0, 4, 7, 9),
+        // Sa–Pa "power chord": no third, so it fits major and minor melodies alike.
+        "5" to intArrayOf(0, 7, 12),
         "" to intArrayOf(0, 4, 7),
     )
 

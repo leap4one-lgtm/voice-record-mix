@@ -8,7 +8,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -21,7 +24,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -63,22 +66,34 @@ fun HomeScreen(vm: AppViewModel) {
             }
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button({ picker.launch(arrayOf("audio/*")) }, Modifier.weight(1f)) {
-                    Icon(Icons.Default.LibraryMusic, null)
-                    Text("  Import track")
+            Button(
+                { vm.navigate(Screen.Ready) },
+                Modifier.fillMaxWidth().height(72.dp),
+            ) {
+                Icon(Icons.Default.Mic, null, Modifier.size(28.dp))
+                Column(Modifier.padding(start = 12.dp)) {
+                    Text("Sing with ready music", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("Pick a style and your key. No setup.", style = MaterialTheme.typography.bodySmall)
                 }
-                FilledTonalButton({ vm.createGenerated() }, Modifier.weight(1f)) {
+                Spacer(Modifier.weight(1f))
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton({ picker.launch(arrayOf("audio/*")) }, Modifier.weight(1f)) {
+                    Icon(Icons.Default.LibraryMusic, null)
+                    Text("  My own track")
+                }
+                OutlinedButton({ vm.createGenerated() }, Modifier.weight(1f)) {
                     Icon(Icons.Default.GraphicEq, null)
-                    Text("  Rhythm & pads")
+                    Text("  Custom rhythm")
                 }
             }
         }
         item { SectionTitle("Songs") }
         if (vm.songs.isEmpty()) item {
             Text(
-                "Import a karaoke or instrumental track, or build a tabla + keyboard accompaniment " +
-                    "from chords. Then mark the Pallavi and Charanams once, and you're ready to sing.",
+                "Tap \"Sing with ready music\" to start right away. Songs you sing will appear here.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

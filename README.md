@@ -9,7 +9,14 @@ time of worship, and the music always stays in time.
 |---|---|---|---|---|---|
 | ![](docs/screenshots/1_home.png) | ![](docs/screenshots/2_edit_track.png) | ![](docs/screenshots/3_edit_rhythm.png) | ![](docs/screenshots/4_sing_start.png) | ![](docs/screenshots/5_sing_live.png) | ![](docs/screenshots/6_mix.png) |
 
-## Two kinds of background music
+## Sing with ready music (no setup)
+
+Tap **Sing with ready music**, choose a style (Slow worship, Bhajan 6/8, Keherwa praise, Dadra
+devotional, Praise band 4/4, or Tanpura & keys only), tap your key (Sa), and **Start singing**.
+By default the keys hold one steady Sa–Pa chord, which fits any song; switch on *Chord changes*
+for a simple Pallavi/Charanam pattern. The music keeps going for as long as you sing.
+
+## Your own background music
 
 1. **Import a track**: any karaoke/instrumental MP3, M4A, WAV, etc. from your phone. Play it once
    and tap **Mark section here** where each part begins (Intro, Pallavi, Interlude, Charanam 1, …,

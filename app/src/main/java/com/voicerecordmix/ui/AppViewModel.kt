@@ -48,6 +48,7 @@ import java.util.UUID
 
 sealed interface Screen {
     data object Home : Screen
+    data object Ready : Screen
     data class Edit(val songId: String) : Screen
     data class Perform(val songId: String) : Screen
     data class Mix(val takeId: String) : Screen
@@ -176,6 +177,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 busy = null
             }
         }
+    }
+
+    /** Saves (or refreshes) the ready-made song for [preset] and returns it. */
+    fun readySong(preset: com.voicerecordmix.core.Preset, key: Int, bpm: Int, chordChanges: Boolean): Song {
+        val song = preset.song(key, bpm, chordChanges)
+        repo.saveSong(song)
+        songs = repo.songs()
+        settings = settings.copy(lastKey = key).also { repo.saveSettings(it) }
+        return song
     }
 
     fun createGenerated() {
