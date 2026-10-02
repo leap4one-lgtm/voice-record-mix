@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Microphone -->
+    <path android:fillColor="#FFF2C66D"
+        android:pathData="M54,30c-4.4,0 -8,3.6 -8,8v14c0,4.4 3.6,8 8,8s8,-3.6 8,-8V38c0,-4.4 -3.6,-8 -8,-8z" />
+    <path android:fillColor="#FFF2C66D"
+        android:pathData="M68,50h-3c0,6.1 -4.9,11 -11,11s-11,-4.9 -11,-11h-3c0,7.2 5.4,13.1 12.5,13.9V70h-6v3h15v-3h-6v-6.1C62.6,63.1 68,57.2 68,50z" />
+    <!-- Loop arrows -->
+    <path android:fillColor="#00000000" android:strokeColor="#FFE8DDF5" android:strokeWidth="2.5"
+        android:pathData="M30,54a24,24 0 0,1 40,-17.9" />
+    <path android:fillColor="#FFE8DDF5" android:pathData="M72,31l-1,9 -8,-4z" />
+    <path android:fillColor="#00000000" android:strokeColor="#FFE8DDF5" android:strokeWidth="2.5"
+        android:pathData="M78,54a24,24 0 0,1 -40,17.9" />
+    <path android:fillColor="#FFE8DDF5" android:pathData="M36,77l1,-9 8,4z" />
+</vector>
